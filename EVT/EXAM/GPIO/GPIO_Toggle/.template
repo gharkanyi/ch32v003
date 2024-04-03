@@ -14,3 +14,4 @@ Description=ROM(byte): 16K, SRAM(byte): 2K, CHIP PINS: 20, GPIO PORTS: 51.\nWCH 
 
 PeripheralVersion=1.0
 MCU=CH32V003F4P6
+CLKSpeed=1
