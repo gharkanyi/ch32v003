@@ -145,7 +145,7 @@ int main(void)
     printf("SystemClk:%d\r\n", SystemCoreClock);
     printf( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
 
-    TIM2_PWMOut_Init(100, 48000 - 1, pbuf[2]);
+    TIM2_PWMOut_Init(100 - 1, 48000 - 1, pbuf[2]);
     TIM2_DMA_Init(DMA1_Channel2, (u32)&TIM2->CH3CVR, (u32)pbuf, 3);
 
     TIM_DMACmd(TIM2, TIM_DMA_Update, ENABLE);
