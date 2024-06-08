@@ -12,9 +12,6 @@
 
 /*
  *@Note
- * First step: Port 'Output_Compare_Mode' to TIM2_CH3
- * TIM2_CH3 (remap_f: PD6)
- * Finally:
  * This example demonstrates using DMA to output 4-phases pulses on
  * TIM2_CH1 .. TIM2_CH4. (Pin mapping used: see '==>' mark below ...)
  * (28-BYJ-48 stepper motor wave drive mode)
@@ -133,18 +130,6 @@ static DRIVE waves = { // resolution: 10 us
 	 {   0, 6000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_1, 7}}
 };
 
-/* Output Compare Mode Definition */
-#define OutCompare_Timing   0
-#define OutCompare_Active   1
-#define OutCompare_Inactive 2
-#define OutCompare_Toggle   3
-
-/* Output Compare Mode Selection */
-//#define OutCompare_MODE OutCompare_Timing
-//#define OutCompare_MODE OutCompare_Active
-//#define OutCompare_MODE OutCompare_Inactive
-#define OutCompare_MODE OutCompare_Toggle
-
 void TIM2_Drive_DMA_Init(DRIVE drive, SPEED speed, DIR dir);
 
 /* ************************************************* */
@@ -177,7 +162,6 @@ void TIM2_Drive_Init(DRIVE drive, SPEED speed, DIR dir)
     TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStructure);
 
-    // TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_Toggle;
     TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
     TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High; // TIM_OCPolarity_Low;
     for (STEP step = CH1_IN1A; step < STEPS; step++) {
@@ -191,70 +175,6 @@ void TIM2_Drive_Init(DRIVE drive, SPEED speed, DIR dir)
 
     TIM2_Drive_DMA_Init(drive, speed, dir);
 }
-
-/*********************************************************************
- * @fn      TIM2_OutCompare_Init
- *
- * @brief   Initializes TIM2 output compare.
- *
- * @param   arr - the period value.
- *          psc - the prescaler value.
- *          ccp - the pulse value.
- *
- * @return  none
- */
-void TIM2_OutCompare_Init(u16 arr, u16 psc, u16 ccp)
-{
-    GPIO_InitTypeDef GPIO_InitStructure={0};
-    TIM_OCInitTypeDef TIM_OCInitStructure={0};
-    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure={0};
-
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOD, ENABLE);
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-
-    GPIO_PinRemapConfig(GPIO_FullRemap_TIM2, ENABLE);
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_30MHz;
-    GPIO_Init(GPIOD, &GPIO_InitStructure);
-
-    TIM_TimeBaseInitStructure.TIM_Period = arr;
-    TIM_TimeBaseInitStructure.TIM_Prescaler = psc;
-    TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
-    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStructure);
-
-#if (OutCompare_MODE == OutCompare_Timing)
-    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_Timing;
-
-#elif (OutCompare_MODE == OutCompare_Active)
-    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_Active;
-
-#elif (OutCompare_MODE == OutCompare_Inactive)
-    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_Inactive;
-
-#elif (OutCompare_MODE == OutCompare_Toggle)
-    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_Toggle;
-
-#endif
-
-    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
-    TIM_OCInitStructure.TIM_Pulse = ccp;
-    TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High; // TIM_OCPolarity_Low;
-    TIM_OC3Init(TIM2, &TIM_OCInitStructure);
-
-    // TIM_CtrlPWMOutputs( TIM2, ENABLE );
-    TIM_OC3PreloadConfig( TIM2, TIM_OCPreload_Disable );
-    TIM_ARRPreloadConfig( TIM2, ENABLE );
-    // TIM_Cmd( TIM2, ENABLE );
-}
-
-/* Private variables */
-static u16 pbuf[] = {25, 0};
-
-// u16 pbuf[3] = {10, 50, 80};
 
 /*********************************************************************
  * @fn      TIM2_DMA_Init
@@ -322,29 +242,10 @@ int main(void)
     printf("SystemClk:%d\r\n", SystemCoreClock);
     printf( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
 
-    // TIM2_OutCompare_Init( 100-1, 48000-1, 50 );
-    // TIM2_OutCompare_Init( 100-1, 48000-1, pbuf[1] );
-    // TIM2_Drive_Init(waves, MEDIUM, CW, 100-1, 48000-1); // 1 ms resolution, step = 25 ms (40 Hz)
+    TIM2_Drive_Init(waves, FAST, CW); // 1 us resolution, step = 2 ms (125 Hz)
 
-    TIM2_Drive_Init(waves, FAST, CW); // 10 us resolution, step = 25 ms (40 Hz)
-
-/*
-    // TIM2_DMA_Init(DMA1_Channel1, (u32)&TIM2->CH3CVR, (u32)pbuf, DIM(pbuf));
-
-    // TIM2_DMA_Init(DMA1_Channel5, (u32)&TIM2->CH1CVR, (u32)waves[MEDIUM][CH1_IN1A], EDGE_CNT);
-    TIM2_DMA_Init(dma1_channelx[waves[MEDIUM][CH1_IN1A][DMA_CHN]-1], dma_ccraddr[CH1_IN1A], (u32)waves[MEDIUM][CH1_IN1A], EDGE_CNT);
-    // TIM2_DMA_Init(DMA1_Channel7, (u32)&TIM2->CH2CVR, (u32)waves[MEDIUM][CH2_IN2B], EDGE_CNT);
-    TIM2_DMA_Init(DMA1_Channel1, (u32)&TIM2->CH3CVR, (u32)waves[MEDIUM][CH3_IN3C], EDGE_CNT);
-    TIM2_DMA_Init(DMA1_Channel7, (u32)&TIM2->CH4CVR, (u32)waves[MEDIUM][CH4_IN4D], EDGE_CNT);
-
-    TIM_DMACmd(TIM2, dma_ccrsrc[CH1_IN1A], ENABLE);
-    // TIM_DMACmd(TIM2, TIM_DMA_CC2, ENABLE);
-    TIM_DMACmd(TIM2, TIM_DMA_CC3, ENABLE);
-    TIM_DMACmd(TIM2, TIM_DMA_CC4, ENABLE);
-*/
     TIM_Cmd(TIM2, ENABLE);
     TIM_CtrlPWMOutputs(TIM2, ENABLE);
-/**/
 
     while(1);
 }
