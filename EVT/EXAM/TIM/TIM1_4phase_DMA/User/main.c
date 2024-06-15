@@ -55,6 +55,13 @@
 #define DIM(a) (sizeof(a)/sizeof(a[0]))
 
 typedef enum {
+	WAVE,
+	FULLSTEP,
+	HALFSTEP,
+	DRIVES
+} DRIVE;
+
+typedef enum {
     SLOW,
     MEDIUM,
     FAST,
@@ -71,18 +78,23 @@ typedef enum {
 } STEP;
 
 typedef enum {
-    CW,
-    CCW
+    CCW,
+    CW
 } DIR;
 
 typedef enum {
-    STEP_OUT,
-    STEP_IN,
-    STEP_INIT = STEP_IN,
-    EDGE_CNT,
-    GPIO_PORT = EDGE_CNT,
+    EDGE1,
+    EDGE2,
+    WAVE_INIT = EDGE2,
+    EDGE_CNT1,
+	EDGE3 = EDGE_CNT1,
+	EDGE4,
+	FHST_INIT = EDGE4,
+	EDGE_CNT2,
+    GPIO_PORT = EDGE_CNT2,
     GPIO_PIN,
     DMA_CHN,
+	ZERO,
     EDGES
 } EDGE;
 
@@ -111,37 +123,76 @@ typedef struct {
 	u16 arr;
 	u16 psc;
 } CLOCK;
-static CLOCK clock[SPEEDS] = {
-		{10000-1, 4800-1},
-		{10000-1,  480-1},
-		{ 8000-1,   48-1}
+static CLOCK clocks[DRIVES][SPEEDS] = {  // HSI clock = 48 MHz
+//   SLOW               MEDIUM            FAST
+	{{10000-1, 4800-1}, {10000-1, 480-1}, { 8000-1, 48-1}}, // WAVE
+	{{20000-1, 4800-1}, {20000-1, 480-1}, {16000-1, 48-1}}, // FULLSTEP
+	{{40000-1, 4800-1}, {40000-1, 480-1}, {32000-1, 48-1}}, // HALFSTEP
 };
 
-typedef u16 DRIVE[SPEEDS][STEPS][EDGES];
-static DRIVE waves = { // resolution: 10 us
+typedef u16 DRIVER[SPEEDS][STEPS][EDGES];
+typedef u16 (*DRIVER_P)[STEPS][EDGES];
+static DRIVER waves = { // resolution: 10 us
     // SLOW (resolution: 100 us): step = 250 ms (4 Hz), period = 1 s (1 Hz)
-	{{2500,    0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
-	 {5000, 2500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
-	 {7500, 5000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
-	 {   0, 7500, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}},
+	{{2500,    0,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 {5000, 2500,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {7500, 5000,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 {   0, 7500,  0, 0, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}},
     // MEDIUM (resolution: 10 us): step = 25 ms (40 Hz), period = 100 ms (10 Hz)
-    {{2500,    0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
-     {5000, 2500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
-     {7500, 5000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
-     {   0, 7500, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}},
+    {{2500,    0,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+     {5000, 2500,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+     {7500, 5000,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+     {   0, 7500,  0, 0, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}},
     // FAST (resolution: 1 us):  step = 2 ms (500 Hz), period: 8 ms (125 Hz)
-	{{2000,    0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
-	 {4000, 2000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
-	 {6000, 4000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
-	 {   0, 6000, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}
+	{{2000,    0,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 {4000, 2000,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {6000, 4000,  0, 0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 {   0, 6000,  0, 0, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}
 };
+static DRIVER fulls = { // resolution: 10 us
+    // SLOW (resolution: 100 us): step = 250 ms (4 Hz), period = 2 s (0.5 Hz)
+	{{ 5000, 10000, 15000,     0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 { 7500, 12500, 17500,  2500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {10000, 15000,     0,  5000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 { 2500,  7500, 12500, 17500, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}, // Init with [ZERO]!
+    // MEDIUM (resolution: 10 us): step = 25 ms (40 Hz), period = 200 ms (5 Hz)
+	{{ 5000, 10000, 15000,     0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 { 7500, 12500, 17500,  2500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {10000, 15000,     0,  5000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 { 2500,  7500, 12500, 17500, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}, // Init with [ZERO]!
+    // FAST (resolution: 1 us):  step = 2 ms (500 Hz), period: 16 ms (62.5 Hz)
+	{{ 4000,  8000, 12000,     0, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 { 6000, 10000, 14000,  2000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 { 8000, 12000,     0,  4000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 { 2000,  6000, 10000, 14000, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}  // Init with [ZERO];
+};
+static DRIVER halfs = { // resolution: 10 us
+    // SLOW (resolution: 100 us): step = 250 ms (4 Hz), period = 4 s (0.25 Hz)
+	{{10000, 22500, 30000,  2500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 {15000, 27500, 35000,  7500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {20000, 32500,     0, 12500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 { 5000, 17500, 25000, 37500, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}, // Init with [ZERO]
+    // MEDIUM (resolution: 10 us): step = 25 ms (40 Hz), period = 400 ms (2.5 Hz)
+    {{10000, 22500, 30000,  2500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 {15000, 27500, 35000,  7500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {20000, 32500,     0, 12500, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 { 5000, 17500, 25000, 37500, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}, // Init with [ZERO]
+    // FAST (resolution: 1 us):  step = 2 ms (500 Hz), period: 32 ms (31.25 Hz)
+	{{ 8000, 18000, 24000,  2000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_6, 2},
+	 {12000, 22000, 28000,  6000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_7, 3},
+	 {16000, 26000,     0, 10000, (u16)RCC_APB2Periph_GPIOC, GPIO_Pin_0, 6},
+	 { 4000, 14000, 20000, 30000, (u16)RCC_APB2Periph_GPIOD, GPIO_Pin_3, 4}}  // Init with [ZERO]
+};
+
+DRIVER_P drivers[DRIVES] = {waves, fulls, halfs};
 
 void TIM1_Drive_DMA_Init(DRIVE drive, SPEED speed, DIR dir);
 
 /* ************************************************* */
 void TIM1_Drive_Init(DRIVE drive, SPEED speed, DIR dir)
 {
-	u16 arr = clock[speed].arr, psc = clock[speed].psc;
+	u16 arr = clocks[drive][speed].arr, psc = clocks[drive][speed].psc;
+	DRIVER_P driver = drivers[drive];
 
     GPIO_InitTypeDef GPIO_InitStructure={0};
     TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure={0};
@@ -157,8 +208,8 @@ void TIM1_Drive_Init(DRIVE drive, SPEED speed, DIR dir)
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_30MHz;
     for (STEP step = CH1_IN1A; step < STEPS; step++) {
-        GPIO_InitStructure.GPIO_Pin = drive[speed][step][GPIO_PIN];
-        GPIO_Init(drive[speed][step][GPIO_PORT] == RCC_APB2Periph_GPIOC ? GPIOC : GPIOD, &GPIO_InitStructure);
+        GPIO_InitStructure.GPIO_Pin = driver[speed][step][GPIO_PIN];
+        GPIO_Init(driver[speed][step][GPIO_PORT] == RCC_APB2Periph_GPIOC ? GPIOC : GPIOD, &GPIO_InitStructure);
     }
 
     TIM_TimeBaseInitStructure.TIM_Period = arr;
@@ -171,9 +222,8 @@ void TIM1_Drive_Init(DRIVE drive, SPEED speed, DIR dir)
     TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_Toggle;
     TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
     TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High; // TIM_OCPolarity_Low;
-    for (STEP step = CH1_IN1A; step < STEPS; step++) {
-        // TIM_OCInitStructure.TIM_OCMode = step == CH2_IN2B ? TIM_OCMode_Inactive : TIM_OCMode_Toggle; // DMA collision ...
-        TIM_OCInitStructure.TIM_Pulse = drive[speed][dir ? (REVERSE - step) : step][STEP_INIT];
+    for (STEP step = CH1_IN1A; step < STEPS; step++) { int fhst_init = (step == (dir ? CH1_IN1A : CH4_IN4D)) ? ZERO : FHST_INIT;
+        TIM_OCInitStructure.TIM_Pulse = driver[speed][dir ? (REVERSE - step) : step][drive == WAVE ? WAVE_INIT : fhst_init];
         tim_ocxinit[step](TIM1, &TIM_OCInitStructure);
         tim_ocxpreloadconfig[step](TIM1, TIM_OCPreload_Disable);
     }
@@ -221,11 +271,10 @@ void TIM1_DMA_Init(DMA_Channel_TypeDef *DMA_CHx, u32 ppadr, u32 memadr, u16 bufs
 
 /* ***************************************************** */
 void TIM1_Drive_DMA_Init(DRIVE drive, SPEED speed, DIR dir)
-{
+{	DRIVER_P driver = drivers[drive];
     for (STEP step = CH1_IN1A; step < STEPS; step++) {
-        // if (step == CH2_IN2B) continue; // DMA collision ...
-        TIM1_DMA_Init(dma1_channelx[drive[speed][step][DMA_CHN]-1], dma_ccraddr[step],
-            (u32)drive[speed][dir ? (REVERSE - step) : step], EDGE_CNT);
+        TIM1_DMA_Init(dma1_channelx[driver[speed][step][DMA_CHN]-1], dma_ccraddr[step],
+            (u32)driver[speed][dir ? (REVERSE - step) : step], drive == WAVE ? EDGE_CNT1 : EDGE_CNT2);
         TIM_DMACmd(TIM1, dma_ccrsrc[step], ENABLE);
     }
 }
@@ -249,7 +298,7 @@ int main(void)
     printf("SystemClk:%d\r\n", SystemCoreClock);
     printf( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
 
-    TIM1_Drive_Init(waves, FAST, CW); // FAST: 1 us resolution, step = 2 ms (125 Hz)
+    TIM1_Drive_Init(FULLSTEP, FAST, CW);
 
     TIM_Cmd(TIM1, ENABLE);
     TIM_CtrlPWMOutputs(TIM1, ENABLE);
